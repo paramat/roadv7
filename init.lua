@@ -1,9 +1,10 @@
 -- Parameters
 
-local DEBUG = true
+local DEBUG = false
 
 
--- 2D noise for mgv7 terrain_alt
+-- 2D noise for lower terrain
+-- Must match 'terrain_alt' noise parameters used in mgv7
 
 local np_alt = {
 	offset = 4,
@@ -58,17 +59,6 @@ local np_pathd = {
 	persist = 0.4
 }
 
--- 2D noise for columns
-
-local np_column = {
-	offset = 0,
-	scale = 1,
-	spread = {x = 8, y = 8, z = 8},
-	seed = 1728833,
-	octaves = 3,
-	persist = 2
-}
-
 
 -- Do files
 
@@ -110,7 +100,6 @@ local nobj_patha = nil
 local nobj_pathb = nil
 local nobj_pathc = nil
 local nobj_pathd = nil
-local nobj_column = nil
 
 
 -- Localise noise buffers
@@ -120,7 +109,6 @@ local nbuf_patha
 local nbuf_pathb
 local nbuf_pathc
 local nbuf_pathd
-local nbuf_column
 
 
 -- On generated function
@@ -139,9 +127,9 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	local y0 = minp.y
 	local z0 = minp.z
 	
-	local sidelen = x1 - x0 + 1
-	local emerlen = sidelen + 32
-	local overlen = sidelen + 9
+	local sidelen  = x1 - x0 + 1
+	local emerlen  = sidelen + 32
+	local overlen  = sidelen + 9
 	local pmapdims = {x = overlen, y = overlen, z = 1}
 	local pmapminp = {x = x0 - 5, y = z0 - 5}
 
@@ -150,14 +138,12 @@ minetest.register_on_generated(function(minp, maxp, seed)
 	nobj_pathb  = nobj_pathb  or minetest.get_perlin_map(np_pathb,  pmapdims)
 	nobj_pathc  = nobj_pathc  or minetest.get_perlin_map(np_pathc,  pmapdims)
 	nobj_pathd  = nobj_pathd  or minetest.get_perlin_map(np_pathd,  pmapdims)
-	nobj_column = nobj_column or minetest.get_perlin_map(np_column, pmapdims)
 	
 	local nvals_alt    = nobj_alt   :get2dMap_flat(pmapminp, nbuf_alt)
 	local nvals_patha  = nobj_patha :get2dMap_flat(pmapminp, nbuf_patha)
 	local nvals_pathb  = nobj_pathb :get2dMap_flat(pmapminp, nbuf_pathb)
 	local nvals_pathc  = nobj_pathc :get2dMap_flat(pmapminp, nbuf_pathc)
 	local nvals_pathd  = nobj_pathd :get2dMap_flat(pmapminp, nbuf_pathd)
-	local nvals_column = nobj_column:get2dMap_flat(pmapminp, nbuf_column)
 
 	local vm, emin, emax = minetest.get_mapgen_object("voxelmanip")
 	local area = VoxelArea:new{MinEdge = emin, MaxEdge = emax}
@@ -181,7 +167,6 @@ minetest.register_on_generated(function(minp, maxp, seed)
 			local n_zprepathd = nvals_pathd[(ni - overlen)]
 
 			if x >= x0 - 4 and z >= z0 - 4 then
-				local abscol = math.abs(nvals_column[ni])
 				local tlevel = math.floor(nvals_alt[ni])
 				local pathy = math.min(math.max(tlevel, 7), 42)
 
@@ -223,54 +208,64 @@ minetest.register_on_generated(function(minp, maxp, seed)
 					end
 
 					if tunnel then
-						excatop = pathy + 5 -- tunnel
+						excatop = pathy + 5
 					else
-						excatop = y1 -- excavate to mapchunk top
+						excatop = y1
 					end
 					-- place path node brush
 					local vi = area:index(x, pathy, z)
 					data[vi] = c_roadwhite
 
-					for i = -4, 4 do
 					for k = -4, 4 do
-						local radsq = (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2
-						if radsq <= 13 then
-							local vi = area:index(x + i, pathy, z + k)
-							local nodid = data[vi]
-							if nodid ~= c_roadwhite then
-								data[vi] = c_roadblack
+						local vi = area:index(x - 4, pathy, z + k)
+						for i = -4, 4 do
+							local radsq = (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2
+							if radsq <= 13 then
+								local nodid = data[vi]
+								if nodid ~= c_roadwhite then
+									data[vi] = c_roadblack
+								end
+							elseif radsq <= 25 then
+								local nodid = data[vi]
+								if nodid ~= c_roadblack
+										and nodid ~= c_roadwhite then
+									data[vi] = c_roadslab
+								end
 							end
-						elseif radsq <= 25 then
-							local vi = area:index(x + i, pathy, z + k)
-							local nodid = data[vi]
-							if nodid ~= c_roadblack
-									and nodid ~= c_roadwhite then
-								data[vi] = c_roadslab
-							end
+							vi = vi + 1
 						end
 					end
-					end
-					-- foundations
-					for i = -4, 4 do
+					-- foundations or bridge structure
 					for k = -4, 4 do
-						local radsq = (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2
-						if radsq <= 25 then
-							local vi = area:index(x + i, pathy - 1, z + k)
-							local nodid = data[vi]
-							if nodid ~= c_roadblack
-									and nodid ~= c_roadwhite
-									and nodid ~= c_roadslab then
-								data[vi] = c_concrete
+						local vi = area:index(x - 4, pathy - 1, z + k)
+						for i = -4, 4 do
+							local radsq = (math.abs(i)) ^ 2 + (math.abs(k)) ^ 2
+							if radsq <= 25 then
+								local nodid = data[vi]
+								if nodid ~= c_roadblack
+										and nodid ~= c_roadwhite
+										and nodid ~= c_roadslab then
+									data[vi] = c_concrete
+								end
 							end
+							if radsq <= 2 then
+								local viu = vi - emerlen
+								local nodid = data[viu]
+								if nodid ~= c_roadblack
+										and nodid ~= c_roadwhite
+										and nodid ~= c_roadslab then
+									data[viu] = c_concrete
+								end
+							end
+							vi = vi + 1
 						end
-					end
 					end
 					-- bridge columns
-					if abscol < 0.3 then
+					if math.random() <= 0.0625 then
 						for xx = x - 1, x + 1 do
 						for zz = z - 1, z + 1 do
-							local vi = area:index(xx, pathy - 2, zz)
-							for y = pathy - 2, y0 - 16, -1 do
+							local vi = area:index(xx, pathy - 3, zz)
+							for y = pathy - 3, y0 - 16, -1 do
 								local nodid = data[vi]
 								if nodid == c_stone
 										or nodid == c_destone
@@ -294,7 +289,9 @@ minetest.register_on_generated(function(minp, maxp, seed)
 									if nodid ~= c_air
 											and nodid ~= c_ignore
 											and nodid ~= c_meselamp then
-										if math.random() < 0.02 then
+										if (math.abs(zz - z) == 4
+												or math.abs(xx - x) == 4)
+												and math.random() <= 0.2 then
 											data[vi] = c_meselamp
 										else
 											data[vi] = c_concrete
